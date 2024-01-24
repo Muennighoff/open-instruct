@@ -1,3 +1,103 @@
+def create_prompt_with_yi_chat_format(messages, bos="<|startoftext|>", eos="<|endoftext|>", add_bos=True):
+    formatted_text = ""
+    for message in messages:
+        if message["role"] == "system":
+            formatted_text += "<|im_start|>system\n" + message["content"] + "<|im_end|>\n"
+        elif message["role"] == "user":
+            formatted_text += "<|im_start|>user\n" + message["content"] + "<|im_end|>\n"
+        elif message["role"] == "assistant":
+            formatted_text += "<|im_start|>assistant\n" + message["content"].strip() + "<|im_end|>\n"
+        else:
+            raise ValueError(
+                "Yi34 chat template only supports 'system', 'user' and 'assistant' roles. Invalid role: {}.".format(message["role"])
+                )
+    formatted_text += "<|im_start|>assistant\n"
+    formatted_text = bos + formatted_text if add_bos else formatted_text
+    return formatted_text
+
+def create_prompt_with_halo_chat_format(messages, bos="<s>", eos="</s>", add_bos=False):
+    formatted_text = ""
+    system = []
+    for message in messages:
+        if message["role"] == "system":
+            system.append(message["content"].strip())
+        elif message["role"] == "user":
+            if len(system) > 0:
+                formatted_text += "\n\nHuman: " + " ".join(system) + "\n" + message["content"]
+                system = []
+            else:
+                formatted_text += "\n\nHuman: " + message["content"]
+        elif message["role"] == "assistant":
+            formatted_text += " \n\nAssistant: " + message["content"].strip() + eos
+        else:
+            raise ValueError("Invalid role: {}.".format(message["role"]))
+    formatted_text += " \n\nAssistant:"
+    formatted_text = bos + formatted_text if add_bos else formatted_text
+    return formatted_text
+
+
+def create_prompt_with_sgpt2_chat_format(messages, bos="<s>", eos="</s>", add_bos=False):
+    formatted_text = ""
+    system = []
+    for message in messages:
+        if message["role"] == "system":
+            system.append(message["content"].strip())
+        elif message["role"] == "user":
+            if len(system) > 0:
+                formatted_text += "<user>" + "\n".join(system) + "\n" + message["content"] + eos
+                system = []
+            else:
+                formatted_text += "<user>" + message["content"] + eos
+        elif message["role"] == "assistant":
+            formatted_text += "<assistant>" + message["content"].strip() + eos
+        else:
+            raise ValueError("Invalid role: {}.".format(message["role"]))
+    formatted_text += "<assistant>"
+    formatted_text = bos + formatted_text if add_bos else formatted_text
+    return formatted_text
+
+
+def create_prompt_with_sgpt2_zephyr_chat_format(messages, bos="<s>", eos="</s>", add_bos=True):
+    formatted_text = ""
+    system = []
+    for message in messages:
+        if message["role"] == "system":
+            system.append(message["content"])
+        elif message["role"] == "user":
+            if len(system) > 0:
+                formatted_text += "<|user|>\n" + "\n".join(system) + "\n" + message["content"] + eos + "\n"
+                system = []
+            else:
+                formatted_text += "<|user|>\n" + message["content"] + eos + "\n"
+        elif message["role"] == "assistant":
+            formatted_text += "<|assistant|>\n" + message["content"] + eos + "\n"
+        else:
+            raise ValueError("Invalid role: {}.".format(message["role"]))
+    formatted_text += "<|assistant|>\n"
+    formatted_text = bos + formatted_text if add_bos else formatted_text
+    return formatted_text
+
+def create_prompt_with_sgpt2_tulu_chat_format(messages, bos="<s>", eos="</s>", add_bos=True):
+    formatted_text = ""
+    system = []
+    for message in messages:
+        if message["role"] == "system":
+            system.append(message["content"])
+        elif message["role"] == "user":
+            if len(system) > 0:
+                formatted_text += "<|user|>\n" + "\n".join(system) + "\n" + message["content"] + "\n"
+                system = []
+                raise ValueError("SGPT2 Tulu2 Chat System Messages! There was a bug previously with eos at the end. Rerun those evals.")
+            else:
+                formatted_text += "<|user|>\n" + message["content"] + "\n"
+        elif message["role"] == "assistant":
+            formatted_text += "<|assistant|>\n" + message["content"] + eos + "\n"
+        else:
+            raise ValueError("Invalid role: {}.".format(message["role"]))
+    formatted_text += "<|assistant|>\n"
+    # BOS is already added via the tokenizer
+    formatted_text = bos + formatted_text if add_bos else formatted_text
+    return formatted_text
 
 def create_prompt_with_tulu_chat_format(messages, bos="<s>", eos="</s>", add_bos=True):
     formatted_text = ""
@@ -16,6 +116,24 @@ def create_prompt_with_tulu_chat_format(messages, bos="<s>", eos="</s>", add_bos
     formatted_text = bos + formatted_text if add_bos else formatted_text
     return formatted_text
 
+def create_prompt_with_mistral_chat_format(messages, bos="<s>", eos="</s>", add_bos=False):
+    formatted_text = ""
+    system = []
+    for message in messages:
+        if message["role"] == "system":
+            system.append(message["content"].strip())
+        elif message["role"] == "user":
+            if len(system) > 0:
+                formatted_text += "[INST] " + "\n".join(system) + "\n" + message["content"] + " [/INST]"
+                system = []
+            else:
+                formatted_text += "[INST] " + message["content"] + " [/INST]"
+        elif message["role"] == "assistant":
+            formatted_text += message["content"].strip() + eos
+        else:
+            raise ValueError("Invalid role: {}.".format(message["role"]))
+    formatted_text = bos + formatted_text if add_bos else formatted_text
+    return formatted_text
 
 def create_prompt_with_llama2_chat_format(messages, bos="<s>", eos="</s>", add_bos=True):
     '''
@@ -78,9 +196,9 @@ def create_prompt_with_zephyr_chat_format(messages, bos="<s>", eos="</s>", add_b
 
     for message in messages:
         if message["role"] == "system":
-            formatted_text += "<|system|>\n" + message["content"] + "\n"
+            formatted_text += "<|system|>\n" + message["content"] + eos + "\n"
         elif message["role"] == "user":
-            formatted_text += "<|user|>\n" + message["content"] + "\n"
+            formatted_text += "<|user|>\n" + message["content"] + eos + "\n"
         elif message["role"] == "assistant":
             formatted_text += "<|assistant|>\n" + message["content"] + eos + "\n"
         else:
@@ -88,6 +206,7 @@ def create_prompt_with_zephyr_chat_format(messages, bos="<s>", eos="</s>", add_b
                 "Zephyr chat template only supports 'system', 'user' and 'assistant' roles. Invalid role: {}.".format(message["role"])
                 )
     formatted_text += "<|assistant|>\n"
+    formatted_text = bos + formatted_text if add_bos else formatted_text
     return formatted_text
 
             

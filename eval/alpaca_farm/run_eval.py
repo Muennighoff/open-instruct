@@ -14,75 +14,87 @@ def main(args):
     random.seed(42)
     os.makedirs(args.save_dir, exist_ok=True)
 
-    logging.info("loading data and model...")
-    alpaca_eval_data = datasets.load_dataset("tatsu-lab/alpaca_eval", "alpaca_eval")["eval"]
-    prompts = []
-    chat_formatting_function = dynamic_import_function(args.chat_formatting_function) if args.use_chat_format else None
-    for example in alpaca_eval_data:
-        prompt = example["instruction"]
-        if args.use_chat_format:
-            messages = [{"role": "user", "content": prompt}]
-            prompt = chat_formatting_function(messages, add_bos=False)
-        prompts.append(prompt)
+    if not args.eval_only:
+        logging.info("loading data and model...")
+        config = "alpaca_eval_gpt4_baseline" if args.alpaca2 else "alpaca_eval"
+        alpaca_eval_data = datasets.load_dataset("tatsu-lab/alpaca_eval", config)["eval"]
+        prompts = []
+        chat_formatting_function = dynamic_import_function(args.chat_formatting_function) if args.use_chat_format else None
+        for example in alpaca_eval_data:
+            prompt = example["instruction"]
+            if args.use_chat_format:
+                messages = [{"role": "user", "content": prompt}]
+                prompt = chat_formatting_function(messages, add_bos=False)
+            prompts.append(prompt)
 
-    if args.model_name_or_path is not None:
-        if args.use_vllm:
-            model = vllm.LLM(
-                model=args.model_name_or_path,
-                tokenizer=args.tokenizer_name_or_path if args.tokenizer_name_or_path is not None else args.model_name_or_path,
-                tensor_parallel_size=torch.cuda.device_count(),
-            )
-            sampling_params = vllm.SamplingParams(
-                temperature=0,  # greedy decoding
-                max_tokens=args.max_new_tokens,
-            )
-            outputs = model.generate(prompts, sampling_params)
-            outputs = [it.outputs[0].text for it in outputs]
+        if args.model_name_or_path is not None:
+            if args.use_vllm:
+                model = vllm.LLM(
+                    model=args.model_name_or_path,
+                    tokenizer=args.tokenizer_name_or_path if args.tokenizer_name_or_path is not None else args.model_name_or_path,
+                    tensor_parallel_size=args.tensor_parallel_size,
+                    tokenizer_mode="slow" if "yi34" in args.model_name_or_path else "auto",
+                )
+                sampling_params = vllm.SamplingParams(
+                    temperature=args.temperature,  # greedy decoding
+                    max_tokens=args.max_new_tokens,
+                )
+                outputs = model.generate(prompts, sampling_params)
+                outputs = [it.outputs[0].text for it in outputs]
+            else:
+                model, tokenizer = load_hf_lm_and_tokenizer(
+                    model_name_or_path=args.model_name_or_path,
+                    tokenizer_name_or_path=args.tokenizer_name_or_path if args.tokenizer_name_or_path is not None else args.model_name_or_path,
+                    load_in_8bit=args.load_in_8bit,
+                    device_map="balanced_low_0" if torch.cuda.device_count() > 1 else "auto",
+                    gptq_model=args.gptq,
+                    use_fast_tokenizer=False if "yi34" in args.model_name_or_path else True,
+                )
+                stop_sequence = tokenizer.encode("<|im_end|>", add_special_tokens=False)[-2:] # get the last token because the tokenizer may add space tokens at the start.
+                outputs = generate_completions(
+                    model=model,
+                    tokenizer=tokenizer,
+                    prompts=prompts,
+                    max_new_tokens=args.max_new_tokens,
+                    do_sample=args.temperature > 0,
+                    temperature=args.temperature,
+                    batch_size=args.eval_batch_size if args.eval_batch_size else 1,
+                    stop_id_sequences=[[stop_sequence]] if "yi34" in args.model_name_or_path else None,
+                )
         else:
-            model, tokenizer = load_hf_lm_and_tokenizer(
-                model_name_or_path=args.model_name_or_path,
-                tokenizer_name_or_path=args.tokenizer_name_or_path if args.tokenizer_name_or_path is not None else args.model_name_or_path,
-                load_in_8bit=args.load_in_8bit,
-                device_map="balanced_low_0" if torch.cuda.device_count() > 1 else "auto",
-                gptq_model=args.gptq,
-            )
-            outputs = generate_completions(
-                model=model,
-                tokenizer=tokenizer,
-                prompts=prompts,
-                max_new_tokens=args.max_new_tokens,
-                do_sample=False,
+            openai_query_cache_path = os.path.join(args.save_dir, "openai_query_cache.jsonl")
+            openai_func = query_openai_model if args.openai_engine == "text-davinci-003" else query_openai_chat_model
+            results = openai_func(
+                engine=args.openai_engine,
+                instances=[{"id": str(i), "prompt": prompt} for i, prompt in enumerate(prompts)],
+                batch_size=args.eval_batch_size if args.eval_batch_size else 10,
+                output_path=openai_query_cache_path,
+                max_tokens=args.max_new_tokens,
                 temperature=0,
-                batch_size=args.eval_batch_size if args.eval_batch_size else 1,
+                reuse_existing_outputs=True,
             )
+            outputs = [result["output"] for result in results]
+
+        model_name = os.path.basename(os.path.normpath(args.model_name_or_path)) if args.model_name_or_path is not None else args.openai_engine
+        model_results = []
+        with open(os.path.join(args.save_dir, f"alpaca_eval-{model_name}-greedy-long-output.json"), "w") as fout:
+            for example, output in zip(alpaca_eval_data, outputs):
+                example["output"] = output
+                example["generator"] = f"{model_name}-greedy-long"
+                fout.write(json.dumps(example) + "\n")
+                model_results.append(example)
     else:
-        openai_query_cache_path = os.path.join(args.save_dir, "openai_query_cache.jsonl")
-        openai_func = query_openai_model if args.openai_engine == "text-davinci-003" else query_openai_chat_model
-        results = openai_func(
-            engine=args.openai_engine,
-            instances=[{"id": str(i), "prompt": prompt} for i, prompt in enumerate(prompts)],
-            batch_size=args.eval_batch_size if args.eval_batch_size else 10,
-            output_path=openai_query_cache_path,
-            max_tokens=args.max_new_tokens,
-            temperature=0,
-            reuse_existing_outputs=True,
-        )
-        outputs = [result["output"] for result in results]
-
-    model_name = os.path.basename(os.path.normpath(args.model_name_or_path)) if args.model_name_or_path is not None else args.openai_engine
-    model_results = []
-    with open(os.path.join(args.save_dir, f"{model_name}-greedy-long-output.json"), "w") as fout:
-        for example, output in zip(alpaca_eval_data, outputs):
-            example["output"] = output
-            example["generator"] = f"{model_name}-greedy-long"
-            fout.write(json.dumps(example) + "\n")
-            model_results.append(example)
-
+        model_name = os.path.basename(os.path.normpath(args.model_name_or_path)) if args.model_name_or_path is not None else args.openai_engine
+        model_results = []
+        with open(os.path.join(args.save_dir, f"alpaca_eval-{model_name}-greedy-long-output.json"), "r") as fin:
+            for line in fin:
+                model_results.append(json.loads(line))
+    
     if args.reference_path is not None:
         df_leaderboard, annotations = alpaca_farm_evaluate(
             model_outputs=model_results,
             reference_outputs=args.reference_path,
-            annotators_config="alpaca_eval_gpt4",
+            annotators_config="weighted_alpaca_eval_gpt4_turbo" if args.alpaca2 else "alpaca_eval_gpt4",
             output_path=args.save_dir,
             is_return_instead_of_print=True,
             caching_path=os.path.join(args.save_dir, "alpaca_eval_annotator_cache.json"),
@@ -92,7 +104,7 @@ def main(args):
     else:
         df_leaderboard, annotations = alpaca_farm_evaluate(
             model_outputs=model_results,
-            annotators_config="alpaca_eval_gpt4",
+            annotators_config="weighted_alpaca_eval_gpt4_turbo" if args.alpaca2 else "alpaca_eval_gpt4",
             output_path=args.save_dir,
             is_return_instead_of_print=True,
             caching_path=os.path.join(args.save_dir, "alpaca_eval_annotator_cache.json"),
@@ -103,7 +115,7 @@ def main(args):
     print(df_leaderboard.to_string(float_format="%.2f"))
 
     # save to json
-    with open(os.path.join(args.save_dir, f"metrics.json"), "w") as fout:
+    with open(os.path.join(args.save_dir, f"alpaca_eval_metrics.json"), "w") as fout:
         json.dump(df_leaderboard.to_dict(), fout)
         
 
@@ -145,7 +157,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--max_new_tokens",
         type=int,
-        default=8192,
+        default=6144,
         help="Maximum number of new tokens to generate."
     )
     parser.add_argument(
@@ -153,6 +165,16 @@ if __name__ == "__main__":
         type=int, 
         default=1, 
         help="Batch size for evaluation."
+    )
+    parser.add_argument(
+        "--tensor_parallel_size", 
+        type=int, 
+        default=1, 
+    )
+    parser.add_argument(
+        "--temperature", 
+        type=float, 
+        default=0.0, 
     )
     parser.add_argument(
         "--load_in_8bit",
@@ -180,6 +202,15 @@ if __name__ == "__main__":
         action="store_true",
         help="If given, we will use vLLM to generate the predictions - much faster.",
     )
+    parser.add_argument(
+        "--eval_only",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--alpaca2",
+        action="store_true",
+    )    
+
     args = parser.parse_args()
 
     # model_name_or_path and openai_engine cannot be both None or both not None.

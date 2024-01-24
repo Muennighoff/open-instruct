@@ -104,7 +104,7 @@ def main(args):
                 model=args.model_name_or_path,
                 tokenizer=args.tokenizer_name_or_path if args.tokenizer_name_or_path else args.model_name_or_path,
                 tokenizer_mode="slow" if args.use_slow_tokenizer else "auto",
-                tensor_parallel_size=torch.cuda.device_count(),
+                tensor_parallel_size=1,#torch.cuda.device_count(),
             )
             tokenizer = model.llm_engine.tokenizer
         else:
@@ -229,7 +229,7 @@ def main(args):
     print("Scores:")
     print(json.dumps(eval_scores, indent=4))
     
-    with open(os.path.join(args.save_dir, "metrics.json"), "w") as fout:
+    with open(os.path.join(args.save_dir, "tydiqa_metrics.json"), "w") as fout:
         json.dump(eval_scores, fout, indent=4)
     print("Done!")
 

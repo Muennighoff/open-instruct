@@ -79,7 +79,7 @@ def main(args):
                 model=args.model_name_or_path,
                 tokenizer=args.tokenizer_name_or_path if args.tokenizer_name_or_path else args.model_name_or_path,
                 tokenizer_mode="slow" if args.use_slow_tokenizer else "auto",
-                tensor_parallel_size=torch.cuda.device_count(),
+                tensor_parallel_size=args.tensor_parallel_size,
             )
             sampling_params = vllm.SamplingParams(
                 temperature=0,
@@ -144,11 +144,11 @@ def main(args):
         "prediction": pred
     } for example, output, pred in zip(test_data, outputs, predictions)]
 
-    with open(os.path.join(args.save_dir, f"predictions.jsonl"), "w") as fout:
+    with open(os.path.join(args.save_dir, f"gsm_predictions.jsonl"), "w") as fout:
         for prediction in predictions:
             fout.write(json.dumps(prediction) + "\n") 
     
-    with open(os.path.join(args.save_dir, "metrics.json"), "w") as fout:
+    with open(os.path.join(args.save_dir, "gsm_metrics.json"), "w") as fout:
         json.dump({
             "exact_match": em_score
         }, fout, indent=4)
@@ -207,10 +207,15 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--eval_batch_size", 
-        type=int, 
-        default=1, 
+        type=int,
+        default=1,
         help="batch size for evaluation."
     )
+    parser.add_argument(
+        "--tensor_parallel_size", 
+        type=int, 
+        default=1, 
+    )    
     parser.add_argument(
         "--load_in_8bit", 
         action="store_true", 

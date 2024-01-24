@@ -208,7 +208,7 @@ def main(args):
             test_df["choice{}_probs".format(choice)] = probs[:, j]
         test_df.to_csv(
             os.path.join(
-                args.save_dir, "{}.csv".format(subject)
+                args.save_dir, "mmlu_{}.csv".format(subject)
             ),
             index=None,
         )
@@ -224,7 +224,7 @@ def main(args):
     print("Average accuracy: {:.3f}".format(weighted_acc))
 
     # save results
-    with open(os.path.join(args.save_dir, "metrics.json"), "w") as f:
+    with open(os.path.join(args.save_dir, "mmlu_metrics.json"), "w") as f:
         json.dump(
             {
                 "average_acc": weighted_acc,

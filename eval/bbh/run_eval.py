@@ -55,7 +55,7 @@ def main(args):
     assert set(all_tasks.keys()) == set(all_prompts.keys()), "task names in task data and task prompts are not the same."
 
     os.makedirs(args.save_dir, exist_ok=True)
-    os.makedirs(os.path.join(args.save_dir, "predictions"), exist_ok=True)
+    os.makedirs(os.path.join(args.save_dir, "bbh_predictions"), exist_ok=True)
 
     # Load model if not using OpenAI API
     if args.model_name_or_path:
@@ -65,7 +65,7 @@ def main(args):
                 model=args.model_name_or_path,
                 tokenizer=args.tokenizer_name_or_path if args.tokenizer_name_or_path else args.model_name_or_path,
                 tokenizer_mode="slow" if args.use_slow_tokenizer else "auto",
-                tensor_parallel_size=torch.cuda.device_count(),
+                tensor_parallel_size=args.tensor_parallel_size,
             )
         else:
             print("Loading model and tokenizer with huggingface...")
@@ -133,7 +133,7 @@ def main(args):
                 engine=args.openai_engine,
                 instances=instances,
                 batch_size=args.eval_batch_size if args.eval_batch_size else 10,
-                output_path=os.path.join(args.save_dir, "predictions", f"{task_name}_openai_prediction_cache.jsonl"),
+                output_path=os.path.join(args.save_dir, "bbh_predictions", f"{task_name}_openai_prediction_cache.jsonl"),
             )
             outputs = [result["output"] for result in results]
 
@@ -151,7 +151,7 @@ def main(args):
                 example["prediction"] = output.strip()
             predictions.append(example["prediction"])
         
-        with open(os.path.join(args.save_dir, "predictions", f"{task_name}.jsonl"), "w") as fout:
+        with open(os.path.join(args.save_dir, "bbh_predictions", f"{task_name}.jsonl"), "w") as fout:
             for example in task_examples:
                 fout.write(json.dumps(example) + "\n")        
 
@@ -161,7 +161,7 @@ def main(args):
         print(f"Task {task_name} - EM: {performance[task_name]}")
 
     # save the performance
-    with open(os.path.join(args.save_dir, "metrics.json"), "w") as fout:
+    with open(os.path.join(args.save_dir, "bbh_metrics.json"), "w") as fout:
         performance["average_exact_match"] = sum(performance.values()) / len(performance)
         print(f"Average EM: {performance['average_exact_match']}")
         json.dump(performance, fout, indent=4)
@@ -219,6 +219,11 @@ if __name__ == "__main__":
         default=1, 
         help="batch size for evaluation."
     )
+    parser.add_argument(
+        "--tensor_parallel_size", 
+        type=int, 
+        default=1, 
+    )    
     parser.add_argument(
         "--load_in_8bit", 
         action="store_true", 
