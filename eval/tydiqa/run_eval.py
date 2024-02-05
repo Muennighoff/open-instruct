@@ -104,9 +104,13 @@ def main(args):
                 model=args.model_name_or_path,
                 tokenizer=args.tokenizer_name_or_path if args.tokenizer_name_or_path else args.model_name_or_path,
                 tokenizer_mode="slow" if args.use_slow_tokenizer else "auto",
-                tensor_parallel_size=1,#torch.cuda.device_count(),
+                tensor_parallel_size=args.tensor_parallel_size,#torch.cuda.device_count(),
             )
-            tokenizer = model.llm_engine.tokenizer
+            # This is to support vllm >= 0.2.7 where TokenizerGroup was introduced
+            # and llm_engine.engine.tokenizer was no longer a raw tokenizer
+            if hasattr(model.llm_engine.tokenizer, "tokenizer"):
+                tokenizer = model.llm_engine.tokenizer.tokenizer
+            #tokenizer = model.llm_engine.tokenizer
         else:
             model, tokenizer = load_hf_lm_and_tokenizer(
                 model_name_or_path=args.model_name_or_path, 
@@ -323,6 +327,11 @@ if __name__ == "__main__":
         type=str, 
         default="eval.templates.create_prompt_with_tulu_chat_format", 
         help="The function to use to create the chat format. This function will be dynamically imported. Please see examples in `eval/templates.py`."
+    )
+    parser.add_argument(
+        "--tensor_parallel_size",
+        type=int,
+        default=1,
     )
     args = parser.parse_args()
     # model_name_or_path and openai_engine cannot be both None or both not None.
