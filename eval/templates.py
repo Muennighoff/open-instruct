@@ -35,29 +35,7 @@ def create_prompt_with_halo_chat_format(messages, bos="<s>", eos="</s>", add_bos
     formatted_text = bos + formatted_text if add_bos else formatted_text
     return formatted_text
 
-
-def create_prompt_with_sgpt2_chat_format(messages, bos="<s>", eos="</s>", add_bos=False):
-    formatted_text = ""
-    system = []
-    for message in messages:
-        if message["role"] == "system":
-            system.append(message["content"].strip())
-        elif message["role"] == "user":
-            if len(system) > 0:
-                formatted_text += "<user>" + "\n".join(system) + "\n" + message["content"] + eos
-                system = []
-            else:
-                formatted_text += "<user>" + message["content"] + eos
-        elif message["role"] == "assistant":
-            formatted_text += "<assistant>" + message["content"].strip() + eos
-        else:
-            raise ValueError("Invalid role: {}.".format(message["role"]))
-    formatted_text += "<assistant>"
-    formatted_text = bos + formatted_text if add_bos else formatted_text
-    return formatted_text
-
-
-def create_prompt_with_sgpt2_zephyr_chat_format(messages, bos="<s>", eos="</s>", add_bos=True):
+def create_prompt_with_gritlm_zephyr_chat_format(messages, bos="<s>", eos="</s>", add_bos=True):
     formatted_text = ""
     system = []
     for message in messages:
@@ -77,7 +55,7 @@ def create_prompt_with_sgpt2_zephyr_chat_format(messages, bos="<s>", eos="</s>",
     formatted_text = bos + formatted_text if add_bos else formatted_text
     return formatted_text
 
-def create_prompt_with_sgpt2_tulu_chat_format(messages, bos="<s>", eos="</s>", add_bos=True):
+def create_prompt_with_gritlm_chat_format(messages, bos="<s>", eos="</s>", add_bos=True):
     formatted_text = ""
     system = []
     for message in messages:
